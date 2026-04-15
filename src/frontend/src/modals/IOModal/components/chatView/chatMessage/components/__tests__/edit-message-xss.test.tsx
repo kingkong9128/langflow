@@ -41,7 +41,8 @@ jest.mock("@/components/core/codeTabsComponent", () => {
 
 // Mock utility functions
 jest.mock("@/utils/utils", () => ({
-  cn: (...classes: (string | boolean | undefined)[]) => classes.filter(Boolean).join(" "),
+  cn: (...classes: (string | boolean | undefined)[]) =>
+    classes.filter(Boolean).join(" "),
 }));
 
 // Mock translation hook
