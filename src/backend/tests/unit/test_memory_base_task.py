@@ -495,6 +495,28 @@ class TestBuildDocumentsFromMessages:
         message_ids = [d.metadata["message_id"] for d in docs]
         assert len(set(message_ids)) == 3
 
+    def test_user_id_stamped_from_session_metadata(self):
+        flow_id = uuid.uuid4()
+        owner_user_id = uuid.uuid4()
+        msg = _make_message(flow_id=flow_id)
+        object.__setattr__(msg, "session_metadata", {"user_id": str(owner_user_id)})
+        docs = self._call([msg], flow_id=str(flow_id))
+        assert docs[0].metadata["user_id"] == str(owner_user_id)
+
+    def test_user_id_empty_when_session_metadata_missing(self):
+        flow_id = uuid.uuid4()
+        msg = _make_message(flow_id=flow_id)
+        object.__setattr__(msg, "session_metadata", None)
+        docs = self._call([msg], flow_id=str(flow_id))
+        assert docs[0].metadata["user_id"] == ""
+
+    def test_user_id_empty_when_session_metadata_lacks_key(self):
+        flow_id = uuid.uuid4()
+        msg = _make_message(flow_id=flow_id)
+        object.__setattr__(msg, "session_metadata", {"tenant_id": "t1"})
+        docs = self._call([msg], flow_id=str(flow_id))
+        assert docs[0].metadata["user_id"] == ""
+
 
 # ------------------------------------------------------------------ #
 #  _sync_kb_metadata                                                  #

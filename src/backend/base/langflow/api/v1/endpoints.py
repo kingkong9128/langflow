@@ -1192,6 +1192,19 @@ async def custom_component_update(
                 )
                 cc_instance.set_attributes(params)
         updated_build_config = code_request.get_template()
+
+        # Propagate the design-time flow_id (shipped by the frontend in
+        # ``_frontend_node_flow_id``) onto the component instance so that
+        # ``self.graph.flow_id`` resolves via ``PlaceholderGraph`` inside
+        # ``update_build_config``. Without this, components that need to scope
+        # their option lists to the current flow (e.g. Memory Base) see
+        # ``flow_id == None`` and return an empty dropdown.
+        flow_id_field = updated_build_config.get("_frontend_node_flow_id")
+        if isinstance(flow_id_field, dict):
+            flow_id_value = flow_id_field.get("value")
+            if flow_id_value:
+                cc_instance._flow_id = flow_id_value
+
         await update_component_build_config(
             cc_instance,
             build_config=updated_build_config,

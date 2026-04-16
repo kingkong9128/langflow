@@ -382,6 +382,21 @@ def _extract_content_block_text(content_blocks: list) -> str:
     return "\n\n".join(parts)
 
 
+def _extract_message_user_id(msg: MessageTable) -> str:
+    """Return the message's owning user_id as a string, or "" if unknown.
+
+    user_id is stored inside MessageTable.session_metadata under the "user_id" key
+    (see the index defined at message/model.py). A missing or malformed entry
+    resolves to an empty string — downstream retrieval filters treat that as
+    unscoped and will not match a concrete invoker.
+    """
+    metadata = msg.session_metadata or {}
+    if not isinstance(metadata, dict):
+        return ""
+    value = metadata.get("user_id")
+    return str(value) if value else ""
+
+
 def _build_documents_from_messages(
     messages: list[MessageTable],
     *,
@@ -411,6 +426,7 @@ def _build_documents_from_messages(
         text = "\n\n".join(parts)
         if not text:
             continue
+        msg_user_id = _extract_message_user_id(msg)
         chunks = splitter.split_text(text)
         for i, chunk in enumerate(chunks):
             docs.append(
@@ -420,6 +436,7 @@ def _build_documents_from_messages(
                         "message_id": str(msg.id),
                         "session_id": session_id,
                         "flow_id": flow_id,
+                        "user_id": msg_user_id,
                         "sender": msg.sender,
                         "sender_name": msg.sender_name,
                         "timestamp": msg.timestamp.isoformat() if msg.timestamp else "",

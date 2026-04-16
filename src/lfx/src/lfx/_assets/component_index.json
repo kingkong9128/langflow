@@ -69457,6 +69457,188 @@
           },
           "tool_mode": false
         },
+        "MemoryBase": {
+          "base_classes": [
+            "Table"
+          ],
+          "beta": false,
+          "conditional_paths": [],
+          "custom_fields": {},
+          "description": "Retrieve session-scoped chat memory from a Memory Base attached to this flow.",
+          "display_name": "Memory Base",
+          "documentation": "",
+          "edited": false,
+          "field_order": [
+            "memory_base",
+            "search_query",
+            "top_k",
+            "include_metadata"
+          ],
+          "frozen": false,
+          "icon": "brain",
+          "legacy": false,
+          "metadata": {
+            "code_hash": "6e8d330e0b00",
+            "dependencies": {
+              "dependencies": [
+                {
+                  "name": "chromadb",
+                  "version": "1.5.7"
+                },
+                {
+                  "name": "langchain_chroma",
+                  "version": "0.2.6"
+                },
+                {
+                  "name": "langflow",
+                  "version": null
+                },
+                {
+                  "name": "sqlmodel",
+                  "version": "0.0.38"
+                },
+                {
+                  "name": "lfx",
+                  "version": null
+                }
+              ],
+              "total_dependencies": 5
+            },
+            "module": "lfx.components.files_and_knowledge.memory_retrieval.MemoryBaseComponent"
+          },
+          "minimized": false,
+          "output_types": [],
+          "outputs": [
+            {
+              "allows_loop": false,
+              "cache": true,
+              "display_name": "Results",
+              "group_outputs": false,
+              "method": "retrieve_data",
+              "name": "retrieve_data",
+              "selected": "Table",
+              "tool_mode": true,
+              "types": [
+                "Table"
+              ],
+              "value": "__UNDEFINED__"
+            }
+          ],
+          "pinned": false,
+          "template": {
+            "_type": "Component",
+            "code": {
+              "advanced": true,
+              "dynamic": true,
+              "fileTypes": [],
+              "file_path": "",
+              "info": "",
+              "list": false,
+              "load_from_db": false,
+              "multiline": true,
+              "name": "code",
+              "password": false,
+              "placeholder": "",
+              "required": true,
+              "show": true,
+              "title_case": false,
+              "type": "code",
+              "value": "\"\"\"Memory Base retrieval component.\n\nQueries the auto-provisioned Chroma KB backing a Memory Base, with session and\ninvoker scoping enforced at the vector-store ``where`` clause so chat history\ncannot cross-pollinate between sessions or between users sharing a flow.\n\"\"\"\n\nfrom __future__ import annotations\n\nimport uuid\n\nimport chromadb\nimport chromadb.api.client\nfrom langchain_chroma import Chroma\nfrom langflow.services.database.models.flow.model import Flow\nfrom langflow.services.database.models.memory_base.model import MemoryBase\nfrom langflow.services.database.models.user.crud import get_user_by_id\nfrom sqlmodel import select\n\nfrom lfx.base.knowledge_bases.embedding_helpers import (\n    build_embeddings,\n    get_kb_metadata,\n    get_knowledge_bases_root_path,\n    resolve_api_key,\n    resolve_provider_variables,\n)\nfrom lfx.custom import Component\nfrom lfx.io import BoolInput, DropdownInput, IntInput, MessageTextInput, Output\nfrom lfx.log.logger import logger\nfrom lfx.schema.data import Data\nfrom lfx.schema.dataframe import DataFrame\nfrom lfx.services.deps import session_scope\n\n\ndef _coerce_uuid(value) -> uuid.UUID | None:\n    if value is None:\n        return None\n    if isinstance(value, uuid.UUID):\n        return value\n    try:\n        return uuid.UUID(str(value))\n    except (ValueError, TypeError):\n        return None\n\n\nclass MemoryBaseComponent(Component):\n    display_name = \"Memory Base\"\n    description = \"Retrieve session-scoped chat memory from a Memory Base attached to this flow.\"\n    icon = \"brain\"\n    name = \"MemoryBase\"\n\n    inputs = [\n        DropdownInput(\n            name=\"memory_base\",\n            display_name=\"Memory Base\",\n            info=\"Memory Base whose captured conversation history will be searched.\",\n            required=True,\n            options=[],\n            refresh_button=True,\n            real_time_refresh=True,\n        ),\n        MessageTextInput(\n            name=\"search_query\",\n            display_name=\"Search Query\",\n            info=\"Query used for semantic retrieval against the memory base.\",\n            tool_mode=True,\n        ),\n        IntInput(\n            name=\"top_k\",\n            display_name=\"Top K Results\",\n            info=\"Number of top results to return.\",\n            value=5,\n            advanced=True,\n            required=False,\n        ),\n        BoolInput(\n            name=\"include_metadata\",\n            display_name=\"Include Metadata\",\n            info=\"Include chunk metadata (session_id, sender, timestamp, …) on each row.\",\n            value=True,\n            advanced=True,\n        ),\n    ]\n\n    outputs = [\n        Output(\n            name=\"retrieve_data\",\n            display_name=\"Results\",\n            method=\"retrieve_data\",\n            info=\"Returns matching memory chunks scoped to the current session and invoker.\",\n        ),\n    ]\n\n    # Internal cache of {display_name: (memory_base_id, kb_name, owner_user_id)}\n    # rebuilt on every `update_build_config` call and consulted (then re-verified\n    # against the DB) inside `retrieve_data`.\n    _mb_index: dict[str, tuple[str, str, str]]\n\n    def __init__(self, *args, **kwargs):\n        super().__init__(*args, **kwargs)\n        self._mb_index = {}\n\n    async def update_build_config(self, build_config, field_value, field_name=None):  # noqa: ARG002\n        if field_name != \"memory_base\":\n            return build_config\n\n        flow_id = _coerce_uuid(getattr(self.graph, \"flow_id\", None))\n        if flow_id is None:\n            build_config[\"memory_base\"][\"options\"] = []\n            build_config[\"memory_base\"][\"value\"] = None\n            self._mb_index = {}\n            return build_config\n\n        async with session_scope() as db:\n            flow_row = (await db.exec(select(Flow.user_id).where(Flow.id == flow_id))).first()\n            if flow_row is None:\n                build_config[\"memory_base\"][\"options\"] = []\n                build_config[\"memory_base\"][\"value\"] = None\n                self._mb_index = {}\n                return build_config\n            owner_user_id = flow_row\n            stmt = select(MemoryBase).where(\n                MemoryBase.flow_id == flow_id,\n                MemoryBase.user_id == owner_user_id,\n            )\n            mbs = list((await db.exec(stmt)).all())\n\n        index: dict[str, tuple[str, str, str]] = {}\n        for mb in mbs:\n            index[mb.name] = (str(mb.id), mb.kb_name, str(mb.user_id))\n        self._mb_index = index\n\n        options = sorted(index.keys())\n        build_config[\"memory_base\"][\"options\"] = options\n        if build_config[\"memory_base\"].get(\"value\") not in options:\n            build_config[\"memory_base\"][\"value\"] = None\n        return build_config\n\n    async def retrieve_data(self) -> DataFrame:\n        \"\"\"Retrieve session- and invoker-scoped chunks from the selected Memory Base.\"\"\"\n        # ---- Step 1: runtime context ----\n        session_id = getattr(self.graph, \"session_id\", None)\n        if not session_id:\n            msg = (\n                \"A session_id is required on the flow request to enforce data separation \"\n                \"for Memory Base retrieval.\"\n            )\n            raise ValueError(msg)\n\n        invoker_user_id = _coerce_uuid(self.user_id)\n        if invoker_user_id is None:\n            msg = \"An authenticated user_id is required for Memory Base retrieval.\"\n            raise ValueError(msg)\n\n        flow_id = _coerce_uuid(getattr(self.graph, \"flow_id\", None))\n        if flow_id is None:\n            msg = \"flow_id is not available on the graph context; Memory Base retrieval is unavailable.\"\n            raise ValueError(msg)\n\n        selected = self.memory_base\n        if not selected:\n            msg = \"No Memory Base is selected.\"\n            raise ValueError(msg)\n\n        # ---- Step 2: look up MB + owner, re-verifying ownership & flow binding ----\n        async with session_scope() as db:\n            mb_row = (\n                await db.exec(\n                    select(MemoryBase).where(\n                        MemoryBase.name == selected,\n                        MemoryBase.flow_id == flow_id,\n                    )\n                )\n            ).first()\n            if mb_row is None:\n                msg = f\"Memory Base '{selected}' is not attached to this flow.\"\n                raise ValueError(msg)\n\n            owner_user_id = mb_row.user_id\n            kb_name = mb_row.kb_name\n\n            owner = await get_user_by_id(db, owner_user_id)\n            if owner is None:\n                msg = \"Memory Base owner account could not be resolved.\"\n                raise ValueError(msg)\n            owner_username = owner.username\n\n        # ---- Step 3: build embedder using the owner's credential context ----\n        kb_path = get_knowledge_bases_root_path() / owner_username / kb_name\n        metadata = get_kb_metadata(kb_path)\n        if not metadata:\n            msg = f\"Memory Base '{selected}' has no embedding metadata on disk.\"\n            raise ValueError(msg)\n\n        provider = metadata.get(\"embedding_provider\")\n        api_key = metadata.get(\"api_key\")\n        if not api_key and provider:\n            api_key = await resolve_api_key(provider, owner_user_id)\n\n        provider_vars: dict[str, str] = {}\n        if provider in {\"Ollama\", \"IBM WatsonX\"}:\n            provider_vars = await resolve_provider_variables(provider, owner_user_id)\n\n        embedding_function = build_embeddings(metadata, api_key=api_key, provider_vars=provider_vars)\n\n        # ---- Step 4: run similarity search with (session_id, user_id) filter ----\n        chromadb.api.client.SharedSystemClient.clear_system_cache()\n        chroma = Chroma(\n            persist_directory=str(kb_path),\n            embedding_function=embedding_function,\n            collection_name=kb_name,\n        )\n\n        where = {\n            \"$and\": [\n                {\"session_id\": session_id},\n                {\"user_id\": str(invoker_user_id)},\n            ]\n        }\n\n        logger.info(\n            \"MemoryBase retrieval | mb=%s session=%s invoker=%s top_k=%s\",\n            selected,\n            session_id,\n            invoker_user_id,\n            self.top_k,\n        )\n\n        if self.search_query:\n            results = chroma.similarity_search_with_score(\n                query=self.search_query,\n                k=self.top_k,\n                filter=where,\n            )\n        else:\n            docs = chroma.similarity_search(\n                query=\"\",\n                k=self.top_k,\n                filter=where,\n            )\n            results = [(doc, 0) for doc in docs]\n\n        # ---- Step 5: build output DataFrame ----\n        data_list: list[Data] = []\n        for doc, score in results:\n            kwargs: dict = {\"content\": doc.page_content}\n            if self.search_query:\n                kwargs[\"_score\"] = -1 * score\n            if self.include_metadata:\n                kwargs.update(doc.metadata or {})\n            data_list.append(Data(**kwargs))\n\n        return DataFrame(data=data_list)\n"
+            },
+            "include_metadata": {
+              "_input_type": "BoolInput",
+              "advanced": true,
+              "display_name": "Include Metadata",
+              "dynamic": false,
+              "info": "Include chunk metadata (session_id, sender, timestamp, …) on each row.",
+              "list": false,
+              "list_add_label": "Add More",
+              "name": "include_metadata",
+              "override_skip": false,
+              "placeholder": "",
+              "required": false,
+              "show": true,
+              "title_case": false,
+              "tool_mode": false,
+              "trace_as_metadata": true,
+              "track_in_telemetry": true,
+              "type": "bool",
+              "value": true
+            },
+            "memory_base": {
+              "_input_type": "DropdownInput",
+              "advanced": false,
+              "combobox": false,
+              "dialog_inputs": {},
+              "display_name": "Memory Base",
+              "dynamic": false,
+              "external_options": {},
+              "info": "Memory Base whose captured conversation history will be searched.",
+              "name": "memory_base",
+              "options": [],
+              "options_metadata": [],
+              "override_skip": false,
+              "placeholder": "",
+              "real_time_refresh": true,
+              "refresh_button": true,
+              "required": true,
+              "show": true,
+              "title_case": false,
+              "toggle": false,
+              "tool_mode": false,
+              "trace_as_metadata": true,
+              "track_in_telemetry": true,
+              "type": "str",
+              "value": ""
+            },
+            "search_query": {
+              "_input_type": "MessageTextInput",
+              "advanced": false,
+              "display_name": "Search Query",
+              "dynamic": false,
+              "info": "Query used for semantic retrieval against the memory base.",
+              "input_types": [
+                "Message"
+              ],
+              "list": false,
+              "list_add_label": "Add More",
+              "load_from_db": false,
+              "name": "search_query",
+              "override_skip": false,
+              "placeholder": "",
+              "required": false,
+              "show": true,
+              "title_case": false,
+              "tool_mode": true,
+              "trace_as_input": true,
+              "trace_as_metadata": true,
+              "track_in_telemetry": false,
+              "type": "str",
+              "value": ""
+            },
+            "top_k": {
+              "_input_type": "IntInput",
+              "advanced": true,
+              "display_name": "Top K Results",
+              "dynamic": false,
+              "info": "Number of top results to return.",
+              "list": false,
+              "list_add_label": "Add More",
+              "name": "top_k",
+              "override_skip": false,
+              "placeholder": "",
+              "required": false,
+              "show": true,
+              "title_case": false,
+              "tool_mode": false,
+              "trace_as_metadata": true,
+              "track_in_telemetry": true,
+              "type": "int",
+              "value": 5
+            }
+          },
+          "tool_mode": false
+        },
         "SaveToFile": {
           "base_classes": [
             "Message"
@@ -118097,9 +118279,9 @@
     ]
   ],
   "metadata": {
-    "num_components": 355,
+    "num_components": 356,
     "num_modules": 97
   },
-  "sha256": "ccf4044eecaab37002d34a973a32528a2d5fb0ae0b8ae4f3871d56eeb48e5a37",
+  "sha256": "89c7d22951189ecfeb629b13bc8fb19164bc48961e55ccd8da08ad6730d34aa7",
   "version": "0.4.0"
 }
