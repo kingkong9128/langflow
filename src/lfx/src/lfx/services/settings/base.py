@@ -125,9 +125,10 @@ class Settings(BaseSettings):
     (e.g. 'https://langflow.example.com'). When empty, the frontend falls back to
     the browser's window.location.origin."""
 
-    mcp_server_timeout: int = 20
-    """The number of seconds to wait before giving up on a lock to released or establishing a connection to the
-    database."""
+    mcp_server_timeout: int = 90
+    """Seconds to wait for MCP operations (e.g. ``connect_to_server``, ``list_tools``) used by the MCP Tools
+    component. Remote or heavily loaded composer endpoints often exceed short defaults; override with
+    ``LANGFLOW_MCP_SERVER_TIMEOUT`` if needed."""
 
     # ---------------------------------------------------------------------
     # MCP Session-manager tuning
