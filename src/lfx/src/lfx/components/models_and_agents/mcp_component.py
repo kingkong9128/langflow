@@ -34,16 +34,18 @@ from lfx.template.field.base import UNDEFINED
 # when no explicit ``Cookie`` is provided, the first such header is mirrored
 # into ``Cookie`` so downstream MCP middleware that reads session auth from
 # cookies can still see the token.
-_STANDARD_HTTP_HEADERS: frozenset[str] = frozenset({
-    "authorization",
-    "content-type",
-    "accept",
-    "user-agent",
-    "cookie",
-    "host",
-    "connection",
-    "cache-control",
-})
+_STANDARD_HTTP_HEADERS: frozenset[str] = frozenset(
+    {
+        "authorization",
+        "content-type",
+        "accept",
+        "user-agent",
+        "cookie",
+        "host",
+        "connection",
+        "cache-control",
+    }
+)
 
 
 def resolve_mcp_config(
@@ -623,9 +625,7 @@ class MCPToolsComponent(ComponentWithCache):
                 build_config["tool_placeholder"]["tool_mode"] = True
 
                 current_server_name = field_value.get("name") if isinstance(field_value, dict) else field_value
-                servers_cache_key_ui = (
-                    self._mcp_servers_cache_key(current_server_name) if current_server_name else ""
-                )
+                servers_cache_key_ui = self._mcp_servers_cache_key(current_server_name) if current_server_name else ""
                 _last_selected_server = safe_cache_get(self._shared_component_cache, "last_selected_server", "")
                 # Only treat as a server change if there was a previous server selection.
                 # Cold cache (_last_selected_server="") on initial flow load is NOT a server change —
