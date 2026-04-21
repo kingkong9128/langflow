@@ -1,7 +1,7 @@
 {
-  "name": "Langflow",
-  "short_name": "Langflow",
-  "description": "Langflow is a low-code builder that makes it easier to build powerful AIs that can use any API, model, or database.",
+  "name": "AccountexAI - Pipeline Editor",
+  "short_name": "AccountexAI",
+  "description": "AccountexAI Pipeline Editor - Visual workflow builder for AI-powered accounting automation.",
   "icons": [
     {
       "src": "icons/32x32.png",
