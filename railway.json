@@ -2,7 +2,7 @@
   "$schema": "https://railway.com/railway.json",
   "build": {
     "builder": "DOCKERFILE",
-    "dockerfilePath": "docker_example/Dockerfile"
+    "dockerfilePath": "Dockerfile.railway"
   },
   "deploy": {
     "numReplicas": 1,
