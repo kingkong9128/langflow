@@ -1,0 +1,3 @@
+[tool.lfx.services]
+# Use AccountexAI custom auth service for JWT-based authentication
+auth_service = "langflow.services.auth.custom.accountex:AccountexAuthService"
