@@ -91,7 +91,7 @@ COPY docker/frontend/default.conf.template /etc/nginx/conf.d/default.conf.templa
 COPY docker/frontend/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-RUN mkdir -p /app/data /tmp/nginx /tmp/nginx/client-body /tmp/nginx/proxy && chown -R 1000:0 /app/data /tmp/nginx && chown 1000:0 /app
+RUN mkdir -p /app/data /tmp/nginx /tmp/nginx/client-body /tmp/nginx/proxy /tmp/nginx/fastcgi /tmp/nginx/uwsgi /tmp/nginx/scgi && chown -R 1000:0 /app/data /tmp/nginx && chown 1000:0 /app
 
 LABEL org.opencontainers.image.title="langflow-railway"
 LABEL org.opencontainers.image.authors=["AccountexAI"]

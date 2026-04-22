@@ -5,8 +5,8 @@ export BACKEND_URL="http://localhost:8080"
 export FRONTEND_PORT=7860
 export LANGFLOW_MAX_FILE_SIZE_UPLOAD="${LANGFLOW_MAX_FILE_SIZE_UPLOAD:-1}"
 
-mkdir -p /tmp/nginx /tmp/nginx/client-body /tmp/nginx/proxy
-chmod 755 /tmp/nginx /tmp/nginx/client-body /tmp/nginx/proxy
+mkdir -p /tmp/nginx /tmp/nginx/client-body /tmp/nginx/proxy /tmp/nginx/fastcgi /tmp/nginx/uwsgi /tmp/nginx/scgi
+chmod 755 /tmp/nginx /tmp/nginx/client-body /tmp/nginx/proxy /tmp/nginx/fastcgi /tmp/nginx/uwsgi /tmp/nginx/scgi
 envsubst '${BACKEND_URL} ${FRONTEND_PORT} ${LANGFLOW_MAX_FILE_SIZE_UPLOAD}' \
     < /etc/nginx/conf.d/default.conf.template \
     > /tmp/nginx/default.conf
