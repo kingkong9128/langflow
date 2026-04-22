@@ -1,17 +1,15 @@
 worker_processes auto;
 pid /tmp/nginx.pid;
+error_log /dev/stderr info;
+user root;
 events {}
 
 http {
     include /etc/nginx/mime.types;
     default_type text/plain;
     client_max_body_size ${LANGFLOW_MAX_FILE_SIZE_UPLOAD}M;
-
-    types {
-        text/html html;
-        text/css css;
-        application/javascript js;
-    }
+    client_body_temp_path /tmp/nginx/client-body 1 2;
+    proxy_temp_path /tmp/nginx/proxy 1 2;
 
     server {
         gzip on;
