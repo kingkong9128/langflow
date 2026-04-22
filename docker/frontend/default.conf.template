@@ -6,6 +6,7 @@ events {}
 http {
     include /etc/nginx/mime.types;
     default_type text/plain;
+    access_log /dev/stdout;
     client_max_body_size ${LANGFLOW_MAX_FILE_SIZE_UPLOAD}M;
     client_body_temp_path /tmp/nginx/client-body 1 2;
     proxy_temp_path /tmp/nginx/proxy 1 2;
