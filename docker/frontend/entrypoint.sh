@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-export BACKEND_URL="http://localhost:8080"
+export BACKEND_URL="http://127.0.0.1:8080"
 export FRONTEND_PORT=7860
 export LANGFLOW_MAX_FILE_SIZE_UPLOAD="${LANGFLOW_MAX_FILE_SIZE_UPLOAD:-1}"
 
