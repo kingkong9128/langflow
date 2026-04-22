@@ -11,7 +11,7 @@ envsubst '${BACKEND_URL} ${FRONTEND_PORT} ${LANGFLOW_MAX_FILE_SIZE_UPLOAD}' \
     < /etc/nginx/conf.d/default.conf.template \
     > /tmp/nginx/default.conf
 
-python -m langflow run --frontend-path /usr/share/nginx/html &
+python -m langflow run --frontend-path /usr/share/nginx/html --port 8080 &
 PYTHON_PID=$!
 
 sleep 3
