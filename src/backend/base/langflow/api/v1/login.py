@@ -142,6 +142,91 @@ async def auto_login(response: Response, db: DbSession):
     )
 
 
+class ExternalTokenRequest(BaseModel):
+    externalToken: str
+
+
+@router.post("/login/external", response_model=Token, include_in_schema=False)
+async def login_with_external_token(
+    response: Response,
+    body: ExternalTokenRequest,
+    db: DbSession,
+):
+    """Authenticate using an AccountexAI JWT and return LangFlow session tokens.
+
+    This endpoint:
+    1. Validates the AccountexAI JWT using AccountexAuthService
+    2. Creates/gets the corresponding LangFlow user (JIT provisioning)
+    3. Returns LangFlow access and refresh tokens
+    """
+    from langflow.services.auth.exceptions import (
+        InvalidTokenError as AuthInvalidTokenError,
+        TokenExpiredError,
+    )
+
+    auth_settings = get_settings_service().auth_settings
+    auth = get_auth_service()
+
+    try:
+        user = await auth.authenticate_with_credentials(token=body.externalToken, api_key=None, db=db)
+    except (TokenExpiredError, AuthInvalidTokenError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(exc.detail) if hasattr(exc, "detail") else "Invalid or expired token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    except Exception as exc:
+        from loguru import logger
+        logger.error(f"External token authentication error: {exc}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid external token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    if user:
+        user_id = user.id
+        tokens = await auth.create_user_tokens(user_id=user_id, db=db, update_last_login=True)
+
+        response.set_cookie(
+            "refresh_token_lf",
+            tokens["refresh_token"],
+            httponly=auth_settings.REFRESH_HTTPONLY,
+            samesite=auth_settings.REFRESH_SAME_SITE,
+            secure=auth_settings.REFRESH_SECURE,
+            expires=auth_settings.REFRESH_TOKEN_EXPIRE_SECONDS,
+            domain=auth_settings.COOKIE_DOMAIN,
+        )
+        response.set_cookie(
+            "access_token_lf",
+            tokens["access_token"],
+            httponly=auth_settings.ACCESS_HTTPONLY,
+            samesite=auth_settings.ACCESS_SAME_SITE,
+            secure=auth_settings.REFRESH_SECURE,
+            expires=auth_settings.ACCESS_TOKEN_EXPIRE_SECONDS,
+            domain=auth_settings.COOKIE_DOMAIN,
+        )
+        if hasattr(user, "store_api_key") and user.store_api_key:
+            response.set_cookie(
+                "apikey_tkn_lflw",
+                str(user.store_api_key),
+                httponly=auth_settings.ACCESS_HTTPONLY,
+                samesite=auth_settings.ACCESS_SAME_SITE,
+                secure=auth_settings.REFRESH_SECURE,
+                expires=None,
+                domain=auth_settings.COOKIE_DOMAIN,
+            )
+        await get_variable_service().initialize_user_variables(user_id, db)
+        _ = await get_or_create_default_folder(db, user_id)
+        return tokens
+
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Authentication failed",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
 @router.post("/refresh", include_in_schema=False)
 async def refresh_token(
     request: Request,
